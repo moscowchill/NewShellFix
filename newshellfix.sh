@@ -51,14 +51,18 @@ install_oh_my_zsh() {
     fi
 
     # Check if Oh My Zsh is already installed
-    if [ ! -d "$HOME/.oh-my-zsh" ]; then
+    if [ ! -d "/home/$SUDO_USER/.oh-my-zsh" ]; then
         print_message "Installing Oh My Zsh..."
-        # Download and execute the install script with the --unattended flag
-        sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
-
+        # Download and execute the install script
+        sudo -u $SUDO_USER sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        
+        # Make sure .zshrc exists
+        if [ ! -f "/home/$SUDO_USER/.zshrc" ]; then
+            sudo -u $SUDO_USER cp "/home/$SUDO_USER/.oh-my-zsh/templates/zshrc.zsh-template" "/home/$SUDO_USER/.zshrc"
+        fi
+        
         # Change the default shell to Zsh
-        print_message "Changing the default shell to Zsh..."
-        chsh -s "$(which zsh)"
+        chsh -s "$(which zsh)" $SUDO_USER
     else
         print_message "Oh My Zsh is already installed."
     fi
@@ -67,22 +71,50 @@ install_oh_my_zsh() {
 # Function to set Agnoster theme in Oh My Zsh
 set_agnoster_theme() {
     print_message "Setting Agnoster theme..."
-    sed -i 's/ZSH_THEME=".*"/ZSH_THEME="agnoster"/' ~/.zshrc
+    if [ -f "/home/$SUDO_USER/.zshrc" ]; then
+        sudo -u $SUDO_USER sed -i 's/ZSH_THEME=".*"/ZSH_THEME="agnoster"/' "/home/$SUDO_USER/.zshrc"
+    else
+        print_error ".zshrc file not found"
+    fi
 }
 
 # Function to install Autojump
 install_autojump() {
     print_message "Installing Autojump..."
-    sudo apt-get install -y autojump
-    echo '[[ -s /usr/share/autojump/autojump.sh ]] && . /usr/share/autojump/autojump.sh' >> ~/.zshrc
+    apt-get install -y autojump
+    if [ -f "/home/$SUDO_USER/.zshrc" ]; then
+        if ! grep -q "autojump.sh" "/home/$SUDO_USER/.zshrc"; then
+            echo '[[ -s /usr/share/autojump/autojump.sh ]] && . /usr/share/autojump/autojump.sh' | sudo -u $SUDO_USER tee -a "/home/$SUDO_USER/.zshrc"
+        fi
+    fi
 }
 
 # Function to install Autosuggest plugin
 install_autosuggest() {
     print_message "Installing zsh-autosuggestions..."
-    git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
-    echo 'source ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh' >> ~/.zshrc
-    echo "plugins=(\${plugins[@]} zsh-autosuggestions)" >> ~/.zshrc
+    local plugin_dir="/home/$SUDO_USER/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+    if [ ! -d "$plugin_dir" ]; then
+        sudo -u $SUDO_USER git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir"
+    else
+        print_message "zsh-autosuggestions already installed"
+    fi
+    
+    if [ -f "/home/$SUDO_USER/.zshrc" ]; then
+        # Only add if not already present
+        if ! grep -q "plugins=.*zsh-autosuggestions" "/home/$SUDO_USER/.zshrc"; then
+            if grep -q "plugins=(" "/home/$SUDO_USER/.zshrc"; then
+                # Add to existing plugins line
+                sudo -u $SUDO_USER sed -i 's/plugins=(/plugins=(zsh-autosuggestions /' "/home/$SUDO_USER/.zshrc"
+            else
+                # Create new plugins line
+                echo "plugins=(git zsh-autosuggestions)" | sudo -u $SUDO_USER tee -a "/home/$SUDO_USER/.zshrc"
+            fi
+        fi
+        
+        if ! grep -q "source.*zsh-autosuggestions.zsh" "/home/$SUDO_USER/.zshrc"; then
+            echo 'source ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh' | sudo -u $SUDO_USER tee -a "/home/$SUDO_USER/.zshrc"
+        fi
+    fi
 }
 
 # Function to install Powerline Fonts
@@ -94,22 +126,34 @@ install_powerline_fonts() {
 # New function to install Node.js via NVM
 install_node() {
     print_message "Installing NVM and Node.js..."
-    # Install NVM as the sudo user, not as root
-    sudo -u $SUDO_USER bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash'
+    # Check if NVM is already installed
+    if [ ! -d "/home/$SUDO_USER/.nvm" ]; then
+        sudo -u $SUDO_USER bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash'
+    else
+        print_message "NVM is already installed"
+    fi
     
     # Add NVM to current session
     export NVM_DIR="/home/$SUDO_USER/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     
-    # Install latest LTS version of Node.js as the sudo user
-    sudo -u $SUDO_USER bash -c "source $NVM_DIR/nvm.sh && nvm install --lts && nvm use --lts && npm install -g pm2"
-    check_status "Node.js and PM2 installation"
-    
-    # Add NVM initialization to .zshrc if not already present
-    if ! grep -q "export NVM_DIR" "/home/$SUDO_USER/.zshrc"; then
-        echo 'export NVM_DIR="$HOME/.nvm"' >> "/home/$SUDO_USER/.zshrc"
-        echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm' >> "/home/$SUDO_USER/.zshrc"
+    # Install latest LTS version of Node.js if not already installed
+    if ! sudo -u $SUDO_USER bash -c "source $NVM_DIR/nvm.sh && nvm ls | grep -q 'lts'"; then
+        sudo -u $SUDO_USER bash -c "source $NVM_DIR/nvm.sh && nvm install --lts && nvm use --lts && npm install -g pm2"
+        check_status "Node.js and PM2 installation"
+    else
+        print_message "Node.js LTS is already installed"
     fi
+    
+    # Add NVM initialization to shell rc files if not already present
+    for rc_file in "/home/$SUDO_USER/.zshrc" "/home/$SUDO_USER/.bashrc"; do
+        if [ -f "$rc_file" ]; then
+            if ! grep -q "export NVM_DIR" "$rc_file"; then
+                echo 'export NVM_DIR="$HOME/.nvm"' | sudo -u $SUDO_USER tee -a "$rc_file"
+                echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' | sudo -u $SUDO_USER tee -a "$rc_file"
+            fi
+        fi
+    done
 }
 
 # Check if script is run as root
