@@ -156,6 +156,45 @@ install_node() {
     done
 }
 
+# Function to install MongoDB
+install_mongodb() {
+    print_message "Installing MongoDB..."
+    
+    # Install required packages
+    apt-get install -y gnupg curl
+    
+    # Import MongoDB public GPG key
+    curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
+        gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg \
+        --dearmor
+    
+    # Add MongoDB repository
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | \
+        tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+    
+    # Update package list
+    apt-get update
+    
+    # Install MongoDB
+    apt-get install -y mongodb-org
+    
+    # Start MongoDB service
+    systemctl start mongod
+    systemctl enable mongod
+    
+    check_status "MongoDB installation"
+    
+    # Add MongoDB port to UFW if it's installed and enabled
+    if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+        if prompt_yes_no "Do you want to allow MongoDB port (27017)?"; then
+            ufw allow 27017/tcp
+            check_status "MongoDB UFW rule addition"
+        fi
+    fi
+    
+    print_message "MongoDB installed and running on port 27017"
+}
+
 # Check if script is run as root
 if [[ $EUID -ne 0 ]]; then
    print_error "This script must be run as root"
@@ -165,6 +204,7 @@ fi
 # Prompt for optional installations
 prompt_yes_no "Do you want to install Nginx?" && install_nginx=true || install_nginx=false
 prompt_yes_no "Do you want to install UFW (Uncomplicated Firewall)?" && install_ufw=true || install_ufw=false
+prompt_yes_no "Do you want to install MongoDB?" && install_mongodb=true || install_mongodb=false
 
 # Update system
 print_message "Updating system packages..."
@@ -245,6 +285,11 @@ install_autojump
 install_autosuggest
 install_powerline_fonts
 install_node
+
+# Add this in the main installation section (near the end of the script)
+if [ "$install_mongodb" = true ]; then
+    install_mongodb
+fi
 
 print_message "All installations completed successfully!"
 print_warning "Please log out and log back in for all changes to take effect."
