@@ -120,7 +120,7 @@ install_autosuggest() {
 # Function to install Powerline Fonts
 install_powerline_fonts() {
     print_message "Installing Powerline Fonts..."
-    sudo apt install fonts-powerline
+    sudo apt install -y fonts-powerline
 }
 
 # New function to install Node.js via NVM
@@ -270,9 +270,6 @@ if [ "$install_ufw" = true ]; then
         ufw allow http
         ufw allow https
     }
-    
-    prompt_yes_no "Do you want to allow PostgreSQL (5432)?" && ufw allow 5432/tcp
-    prompt_yes_no "Do you want to allow MongoDB (27017)?" && ufw allow 27017/tcp
     
     ufw --force enable
     check_status "UFW installation and configuration"
